@@ -1,0 +1,318 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+import {Test, console} from "forge-std/Test.sol";
+import {IndieTreat} from "../src/IndieTreat.sol";
+
+contract IndieTreatTest is Test {
+    IndieTreat public indieTreat;
+    address payable public testWallet;
+
+    // Declare the event for expectEmit
+    event PurchaseMade(
+        uint256 indexed storeId,
+        uint256 indexed purchaseId,
+        string productName,
+        string username,
+        uint256 userId,
+        uint256 timestamp,
+        uint256 amount,
+        address wallet
+    );
+
+    function setUp() public {
+        indieTreat = new IndieTreat();
+        testWallet = payable(makeAddr("testWallet"));
+    }
+
+    function test_FirstPurchaseForStore() public {
+        uint256 storeId = 1;
+        string memory productName = "Coffee Mug";
+        string memory username = "alice";
+        uint256 userId = 123;
+        uint256 purchaseAmount = 0.1 ether;
+
+        // Make first purchase for store
+        indieTreat.purchase{value: purchaseAmount}(
+            storeId,
+            productName,
+            username,
+            userId,
+            testWallet
+        );
+
+        // Verify purchase count is 1
+        assertEq(indieTreat.getStorePurchaseCount(storeId), 1);
+
+        // Verify store exists
+        assertTrue(indieTreat.storeExists(storeId));
+
+        // Get the purchase details
+        (
+            string memory retrievedProductName,
+            string memory retrievedUsername,
+            uint256 retrievedUserId,
+            uint256 timestamp,
+            uint256 amount
+        ) = indieTreat.getPurchase(storeId, 0);
+
+        assertEq(retrievedProductName, productName);
+        assertEq(retrievedUsername, username);
+        assertEq(retrievedUserId, userId);
+        assertEq(amount, purchaseAmount);
+        assertGt(timestamp, 0);
+
+        // Verify ETH was sent to the wallet
+        assertEq(testWallet.balance, purchaseAmount);
+    }
+
+    function test_MultiplePurchasesForSameStore() public {
+        uint256 storeId = 1;
+        uint256 initialBalance = testWallet.balance;
+
+        // First purchase
+        indieTreat.purchase{value: 0.1 ether}(
+            storeId,
+            "Coffee Mug",
+            "alice",
+            123,
+            testWallet
+        );
+
+        // Second purchase
+        indieTreat.purchase{value: 0.2 ether}(
+            storeId,
+            "T-Shirt",
+            "bob",
+            456,
+            testWallet
+        );
+
+        // Third purchase
+        indieTreat.purchase{value: 0.05 ether}(
+            storeId,
+            "Sticker",
+            "charlie",
+            789,
+            testWallet
+        );
+
+        // Verify purchase count is 3
+        assertEq(indieTreat.getStorePurchaseCount(storeId), 3);
+
+        // Verify all purchases
+        (
+            string memory product1,
+            string memory user1,
+            uint256 id1,
+            ,
+            uint256 amount1
+        ) = indieTreat.getPurchase(storeId, 0);
+        assertEq(product1, "Coffee Mug");
+        assertEq(user1, "alice");
+        assertEq(id1, 123);
+        assertEq(amount1, 0.1 ether);
+
+        (
+            string memory product2,
+            string memory user2,
+            uint256 id2,
+            ,
+            uint256 amount2
+        ) = indieTreat.getPurchase(storeId, 1);
+        assertEq(product2, "T-Shirt");
+        assertEq(user2, "bob");
+        assertEq(id2, 456);
+        assertEq(amount2, 0.2 ether);
+
+        (
+            string memory product3,
+            string memory user3,
+            uint256 id3,
+            ,
+            uint256 amount3
+        ) = indieTreat.getPurchase(storeId, 2);
+        assertEq(product3, "Sticker");
+        assertEq(user3, "charlie");
+        assertEq(id3, 789);
+        assertEq(amount3, 0.05 ether);
+
+        // Verify total ETH was sent to wallet
+        assertEq(testWallet.balance, initialBalance + 0.35 ether);
+    }
+
+    function test_MultipleStores() public {
+        address payable wallet1 = payable(makeAddr("wallet1"));
+        address payable wallet2 = payable(makeAddr("wallet2"));
+
+        // Store 1 purchases
+        indieTreat.purchase{value: 0.1 ether}(
+            1,
+            "Coffee Mug",
+            "alice",
+            123,
+            wallet1
+        );
+        indieTreat.purchase{value: 0.2 ether}(
+            1,
+            "T-Shirt",
+            "bob",
+            456,
+            wallet1
+        );
+
+        // Store 2 purchases
+        indieTreat.purchase{value: 0.15 ether}(2, "Book", "dave", 789, wallet2);
+        indieTreat.purchase{value: 0.05 ether}(
+            2,
+            "Poster",
+            "eve",
+            101,
+            wallet2
+        );
+
+        // Verify store 1 has 2 purchases
+        assertEq(indieTreat.getStorePurchaseCount(1), 2);
+
+        // Verify store 2 has 2 purchases
+        assertEq(indieTreat.getStorePurchaseCount(2), 2);
+
+        // Verify both stores exist
+        assertTrue(indieTreat.storeExists(1));
+        assertTrue(indieTreat.storeExists(2));
+
+        // Verify store 0 doesn't exist
+        assertFalse(indieTreat.storeExists(0));
+
+        // Verify ETH was sent to respective wallets
+        assertEq(wallet1.balance, 0.3 ether);
+        assertEq(wallet2.balance, 0.2 ether);
+    }
+
+    function test_StoreDoesNotExist() public {
+        uint256 nonExistentStoreId = 999;
+
+        // Verify store doesn't exist
+        assertFalse(indieTreat.storeExists(nonExistentStoreId));
+
+        // Verify purchase count is 0
+        assertEq(indieTreat.getStorePurchaseCount(nonExistentStoreId), 0);
+    }
+
+    function testFail_GetNonExistentPurchase() public {
+        uint256 storeId = 1;
+
+        // Make one purchase
+        indieTreat.purchase{value: 0.1 ether}(
+            storeId,
+            "Coffee Mug",
+            "alice",
+            123,
+            testWallet
+        );
+
+        // Try to get purchase with ID 1 (which doesn't exist since we only have ID 0)
+        indieTreat.getPurchase(storeId, 1);
+    }
+
+    function test_PurchaseEvent() public {
+        uint256 storeId = 1;
+        string memory productName = "Coffee Mug";
+        string memory username = "alice";
+        uint256 userId = 123;
+        uint256 purchaseAmount = 0.1 ether;
+
+        // Expect the PurchaseMade event to be emitted
+        vm.expectEmit(true, true, false, true);
+        emit PurchaseMade(
+            storeId,
+            0,
+            productName,
+            username,
+            userId,
+            block.timestamp,
+            purchaseAmount,
+            testWallet
+        );
+
+        indieTreat.purchase{value: purchaseAmount}(
+            storeId,
+            productName,
+            username,
+            userId,
+            testWallet
+        );
+    }
+
+    function test_EmptyStringInputs() public {
+        uint256 storeId = 1;
+
+        // Test with empty strings
+        indieTreat.purchase{value: 0.1 ether}(storeId, "", "", 123, testWallet);
+
+        // Verify purchase was recorded
+        assertEq(indieTreat.getStorePurchaseCount(storeId), 1);
+
+        (
+            string memory productName,
+            string memory username,
+            uint256 userId,
+            ,
+            uint256 amount
+        ) = indieTreat.getPurchase(storeId, 0);
+        assertEq(productName, "");
+        assertEq(username, "");
+        assertEq(userId, 123);
+        assertEq(amount, 0.1 ether);
+    }
+
+    function test_ZeroUserId() public {
+        uint256 storeId = 1;
+
+        // Test with zero user ID
+        indieTreat.purchase{value: 0.1 ether}(
+            storeId,
+            "Product",
+            "user",
+            0,
+            testWallet
+        );
+
+        // Verify purchase was recorded
+        assertEq(indieTreat.getStorePurchaseCount(storeId), 1);
+
+        (, , uint256 userId, , ) = indieTreat.getPurchase(storeId, 0);
+        assertEq(userId, 0);
+    }
+
+    function testFail_ZeroWalletAddress() public {
+        uint256 storeId = 1;
+
+        // Should fail with zero wallet address
+        indieTreat.purchase{value: 0.1 ether}(
+            storeId,
+            "Product",
+            "user",
+            123,
+            payable(address(0))
+        );
+    }
+
+    function testFail_NoEthSent() public {
+        uint256 storeId = 1;
+
+        // Should fail when no ETH is sent
+        indieTreat.purchase(storeId, "Product", "user", 123, testWallet);
+    }
+
+    function testFail_DirectEthTransfer() public {
+        // Should fail when trying to send ETH directly to contract
+        (bool success, ) = address(indieTreat).call{value: 0.1 ether}("");
+        assertFalse(success);
+    }
+
+    function testFail_DirectEthTransferReceive() public {
+        // Should fail when trying to send ETH directly to contract via receive
+        (bool success, ) = address(indieTreat).call{value: 0.1 ether}("");
+        assertFalse(success);
+    }
+}
