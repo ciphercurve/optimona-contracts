@@ -1,22 +1,51 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
-import "forge-std/Script.sol";
-import {IndieTreat} from "../src/IndieTreat.sol";
-import "forge-std/console.sol";
+// scripts/deploy_indietreat.js
+const { ethers } = require("hardhat");
 
-contract DeployIndieTreat is Script {
-    IndieTreat public indieTreat;
+async function main() {
+  const [deployer] = await ethers.getSigners();
 
-    function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        vm.startBroadcast(deployerPrivateKey);
+  console.log("Deploying IndieTreat with account:", deployer.address);
 
-        // Deploy the IndieTreat contract
-        indieTreat = new IndieTreat();
+  const paymentTokenAddress = "0xYOUR_OMN_TOKEN_ADDRESS"; // Replace with deployed token address
 
-        vm.stopBroadcast();
+  const IndieTreat = await ethers.getContractFactory("IndieTreat");
+  const checkout = await IndieTreat.deploy(paymentTokenAddress);
 
-        // Log deployed contract address
-        console.log("IndieTreat deployed to:", address(indieTreat));
-    }
+  await checkout.deployed();
+
+  console.log("IndieTreat deployed to:", checkout.address);
 }
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+
+/*
+
+// scripts/deploy_token.js
+const { ethers } = require("hardhat");
+
+async function main() {
+  const [deployer] = await ethers.getSigners();
+
+  console.log("Deploying token with account:", deployer.address);
+  console.log("Account balance:", (await deployer.getBalance()).toString());
+
+  const initialSupply = ethers.utils.parseUnits("1000000", 18); // 1M tokens
+  const Token = await ethers.getContractFactory("Optimona");
+  const token = await Token.deploy(initialSupply);
+
+  await token.deployed();
+
+  console.log("Optimona token deployed to:", token.address);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+*/
